@@ -98,6 +98,7 @@ const MIGRATIONS: MigrationFn[] = [
 export class S3 extends DurableObject<Env> {
   sql: SqlStorage;
   secretsCache: Map<string, string[]> = new Map();
+  webSocketClients: Set<WebSocket> = new Set();
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
@@ -131,6 +132,11 @@ export class S3 extends DurableObject<Env> {
   async fetch(request: Request) {
     const url = new URL(request.url);
     const method = request.method;
+
+    // Check for WebSocket upgrade request
+    if (request.headers.get("Upgrade") === "websocket") {
+      return this.handleWebSocketUpgrade(request);
+    }
 
     // Parse path-style URL: /bucket/key or /bucket?list-type=2
     // We need to preserve trailing slashes for directory markers
@@ -242,7 +248,71 @@ export class S3 extends DurableObject<Env> {
       key = "";
     }
 
-    return this.handleRequest(bucket, key, method, request, url);
+    const startTime = Date.now();
+    const response = await this.handleRequest(
+      bucket,
+      key,
+      method,
+      request,
+      url
+    );
+    const duration = Date.now() - startTime;
+    // Broadcast request info to all connected WebSocket clients
+    this.broadcastRequestInfo({
+      method,
+      path: url.pathname + url.search,
+      status: response.status,
+      duration,
+      timestamp: new Date().toISOString(),
+    });
+
+    return response;
+  }
+
+  private handleWebSocketUpgrade(request: Request): Response {
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+
+    this.webSocketClients.add(server);
+
+    server.accept();
+
+    server.addEventListener("close", () => {
+      this.webSocketClients.delete(server);
+    });
+
+    server.addEventListener("error", () => {
+      this.webSocketClients.delete(server);
+    });
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+    });
+  }
+
+  private broadcastRequestInfo(info: {
+    method: string;
+    path: string;
+    status: number;
+    duration: number;
+    timestamp: string;
+  }) {
+    const message = JSON.stringify(info);
+
+    // Remove closed connections
+    const toRemove: WebSocket[] = [];
+    for (const ws of this.webSocketClients) {
+      try {
+        ws.send(message);
+      } catch (err) {
+        toRemove.push(ws);
+      }
+    }
+
+    for (const ws of toRemove) {
+      this.webSocketClients.delete(ws);
+    }
   }
 
   private async handleRequest(

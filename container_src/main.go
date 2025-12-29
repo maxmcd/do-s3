@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -247,6 +248,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	cmd.Wait()
 }
 
+func shaString(str string) string {
+	h := sha256.New()
+	h.Write([]byte(str))
+	hashBytes := h.Sum(nil)
+	return fmt.Sprintf("%x", hashBytes)[:10]
+}
+
 func main() {
 	loc := os.Getenv("CLOUDFLARE_LOCATION")
 
@@ -257,7 +265,7 @@ func main() {
 		if doID == "" {
 			log.Fatalf("CLOUDFLARE_DURABLE_OBJECT_ID not set")
 		}
-		log.Printf("Using Durable Object ID as S3 bucket: %s", doID)
+		log.Printf("Using Durable Object ID as S3 bucket: %s", shaString(doID))
 
 		// Get S3 auth token
 		s3Token := os.Getenv("S3_AUTH_TOKEN")
@@ -270,7 +278,7 @@ func main() {
 			log.Fatalf("Failed to create directory: %v", err)
 		}
 
-		bucket := fmt.Sprintf("s3-%s", doID)
+		bucket := fmt.Sprintf("s3-%s", shaString(doID))
 
 		go func() {
 			// Use Durable Object ID as the S3 bucket name for per-computer isolation

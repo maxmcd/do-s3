@@ -30,6 +30,9 @@ RUN ARCH=$(uname -m) && \
     rm /tmp/tigrisfs.tar.gz && \
     chmod +x /usr/local/bin/tigrisfs
 
+ENV PATH=$PATH:/root/.bun/bin
+RUN curl -fsSL https://bun.sh/install | bash \
+    && which bun
 
 COPY --from=builder /server /server
 

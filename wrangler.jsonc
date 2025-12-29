@@ -15,7 +15,10 @@
     {
       "class_name": "Terminal",
       "image": "./Dockerfile",
-      "max_instances": 10,
+      "max_instances": 1,
+      "instance_type": "standard-3",
+      "rollout_active_grace_period": 0,
+      "rollout_step_percentage": [100],
     },
   ],
   "durable_objects": {
@@ -29,6 +32,9 @@
         "name": "TERMINAL",
       },
     ],
+  },
+  "vars": {
+    "S3_JWT_SECRET": "demo-secret-change-in-production",
   },
   "migrations": [
     {

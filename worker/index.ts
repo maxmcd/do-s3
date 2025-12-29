@@ -1,5 +1,5 @@
 import { createRequestHandler } from "react-router";
-import { Container, getContainer, getRandom } from "@cloudflare/containers";
+import { Container } from "@cloudflare/containers";
 import { S3 } from "./s3";
 import { signToken } from "./lib/jwt";
 export { S3 };
@@ -17,6 +17,17 @@ const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
   import.meta.env.MODE
 );
+
+async function shaString(str: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 10);
+}
 
 const CONTAINER_ENV_HEADER = "X-Container-Env";
 
@@ -80,6 +91,9 @@ class Worker {
     const url = new URL(request.url);
 
     // Check path-based routes first
+    if (url.pathname === "/s3-logs-ws") {
+      return this.handleS3LogsWebSocket(request);
+    }
     if (url.pathname.startsWith("/s3-")) {
       return this.handleS3Request(request);
     }
@@ -99,10 +113,10 @@ class Worker {
       // Get the Terminal DO to generate JWT token with bucket name
       const terminalDO = this.env.TERMINAL.getByName(terminalName);
       const doId = this.env.TERMINAL.idFromName(terminalName).toString();
-      const bucket = `s3-${doId}`;
+      const bucket = `s3-${await shaString(doId)}`;
 
       // Use a shared secret from environment (or hardcoded for demo)
-      const secret = this.env.S3_JWT_SECRET || "demo-secret-change-in-production";
+      const secret = this.env.S3_JWT_SECRET;
 
       // Generate JWT with bucket name in payload
       const token = await signToken(
@@ -114,11 +128,7 @@ class Worker {
         secret
       );
 
-      const requestWithEnv = this.createContainerRequest(
-        request,
-        terminalName,
-        token
-      );
+      const requestWithEnv = this.createContainerRequest(request, token);
       return terminalDO.fetch(requestWithEnv);
     } catch (error) {
       return new Response(
@@ -128,19 +138,24 @@ class Worker {
     }
   }
 
-  private createContainerRequest(
-    request: Request,
-    terminalName: string,
-    token: string
-  ): Request {
+  private createContainerRequest(request: Request, token: string): Request {
     // For some reason, in dev, the url host doesn't contain the port.
     const hostHeader = request.headers.get("host") || "localhost";
-    const protocol = request.headers.get("x-forwarded-proto") || "http";
-    const origin = `${protocol}://${hostHeader}`;
     return setContainerEnv(request, {
       S3_AUTH_TOKEN: token,
       HOST: hostHeader,
     });
+  }
+
+  private async handleS3LogsWebSocket(request: Request): Promise<Response> {
+    // Get the terminal name from query params
+    const url = new URL(request.url);
+    const terminalName = url.searchParams.get("name") || "default";
+    // Get the S3 DO for this terminal
+    const doId = this.env.TERMINAL.idFromName(terminalName).toString();
+
+    // Forward the WebSocket upgrade request to the S3 DO
+    return this.env.S3.getByName(await shaString(doId)).fetch(request);
   }
 
   private async handleS3Request(request: Request): Promise<Response> {
@@ -149,11 +164,8 @@ class Worker {
     if (!pathMatch) {
       return new Response("Invalid S3 path", { status: 400 });
     }
-    const bucket = pathMatch[1].slice(4);
-    const t0 = performance.now();
+    const bucket = pathMatch[1].slice(3);
     const resp = await this.env.S3.getByName(bucket).fetch(request);
-    const t1 = performance.now();
-    console.log(`S3 request took ${t1 - t0}ms`);
     return resp;
   }
 
@@ -165,6 +177,14 @@ class Worker {
 }
 
 export default {
-  fetch: (request: Request, env: Env, ctx: ExecutionContext) =>
-    new Worker(env, ctx).fetch(request),
+  fetch: async (req: Request, env: Env, ctx: ExecutionContext) => {
+    const startTime = Date.now();
+    const url = new URL(req.url);
+    const resp = await new Worker(env, ctx).fetch(req);
+    const duration = Date.now() - startTime;
+    console.log(
+      `[${req.method}] ${url.pathname}${url.search} - ${resp.status} (${duration}ms)`
+    );
+    return resp;
+  },
 };

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Window } from "../components/Window";
+import { S3Activity } from "../components/S3Activity";
 
 export function meta() {
   return [
@@ -65,12 +66,14 @@ export default function Home() {
       function connect() {
         setStatus("connecting");
         setStatusText("Connecting...");
+        let connected = false;
 
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${protocol}//${window.location.host}/ws?cols=${term.cols}&rows=${term.rows}`;
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
+          connected = true;
           setStatus("connected");
           setStatusText("Connected");
           setReconnectMessage("");
@@ -145,40 +148,71 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="h-screen w-full flex flex-col bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-300 p-4 md:p-10">
-      <div className="w-full flex-1 flex flex-col min-h-0">
-        <Window
-          title={
-            <>
-              Terminal Demo
-              {reconnectMessage && (
-                <span className="text-pink-600 text-xs ml-4">
-                  {reconnectMessage}
-                </span>
-              )}
-            </>
-          }
-          rightContent={
-            <div className="flex items-center gap-1.5 text-[11px] text-purple-700">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  status === "connected"
-                    ? "bg-green-400"
-                    : status === "disconnected"
-                      ? "bg-pink-400"
-                      : "bg-purple-400"
-                }`}
-              ></div>
-              <span>{statusText}</span>
-            </div>
-          }
-        >
-          <div
-            ref={containerRef}
-            className="terminal-container flex-1 min-h-0 bg-white relative overflow-hidden"
-            style={{ caretColor: "transparent" }}
-          ></div>
-        </Window>
+    <div className="min-h-screen w-full flex flex-col bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-300">
+      <style>{`
+        body {
+          background: linear-gradient(135deg, #fbcfe8 0%, #e9d5ff 50%, #c7d2fe 100%);
+          margin: 0;
+        }
+      `}</style>
+
+      {/* Content Container */}
+      <div className="pt-6 flex-1 flex flex-col items-center px-4 md:px-10 pb-10 gap-6">
+        {/* Documentation Section */}
+        <div className="w-full max-w-4xl bg-white/80 backdrop-blur-sm rounded-xl shadow-lg p-6">
+          <h2 className="text-xl font-bold text-purple-900 mb-3 font-mono">
+            Cloudflare Container Durable Object FUSE Mount
+          </h2>
+          <p className="text-gray-700 leading-relaxed">
+            This is a demo terminal running in a Cloudflare Worker container
+            with S3-backed persistent storage. Files are mounted at{" "}
+            <code className="bg-purple-100 px-2 py-0.5 rounded text-sm">
+              /data
+            </code>{" "}
+            and automatically synced to Durable Object storage via tigrisfs. Try
+            creating files, running commands, and they'll persist across
+            sessions!
+          </p>
+        </div>
+
+        {/* Terminal Window */}
+        <div className="w-full max-w-6xl h-[600px] flex flex-col">
+          <Window
+            title={
+              <>
+                Terminal
+                {reconnectMessage && (
+                  <span className="text-pink-600 text-xs ml-4">
+                    {reconnectMessage}
+                  </span>
+                )}
+              </>
+            }
+            rightContent={
+              <div className="flex items-center gap-1.5 text-[11px] text-purple-700">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    status === "connected"
+                      ? "bg-green-400"
+                      : status === "disconnected"
+                        ? "bg-pink-400"
+                        : "bg-purple-400"
+                  }`}
+                ></div>
+                <span>{statusText}</span>
+              </div>
+            }
+          >
+            <div
+              ref={containerRef}
+              className="terminal-container flex-1 min-h-0 bg-white relative overflow-hidden"
+              style={{ caretColor: "transparent" }}
+            ></div>
+          </Window>
+        </div>
+
+        {/* S3 Activity Stream */}
+        <S3Activity />
       </div>
     </div>
   );
