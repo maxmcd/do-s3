@@ -4,8 +4,12 @@ import { S3Activity } from "../components/S3Activity";
 
 export function meta() {
   return [
-    { title: "Terminal Demo" },
-    { name: "description", content: "A simple terminal emulator demo" },
+    { title: "do-s3" },
+    {
+      name: "description",
+      content:
+        "A Cloudflare Container that uses a Durable Object for persistent filesystem storage.",
+    },
   ];
 }
 
@@ -164,14 +168,26 @@ export default function Home() {
             Cloudflare Container Durable Object FUSE Mount
           </h2>
           <p className="text-gray-700 leading-relaxed">
-            This is a demo terminal running in a Cloudflare Worker container
-            with S3-backed persistent storage. Files are mounted at{" "}
+            This is a cloudflare container that uses a Durable Object for
+            persistent filesystem storage. The
             <code className="bg-purple-100 px-2 py-0.5 rounded text-sm">
               /data
             </code>{" "}
-            and automatically synced to Durable Object storage via tigrisfs. Try
-            creating files, running commands, and they'll persist across
-            sessions!
+            dir is a FUSE mount that connects to a DO over{" "}
+            <a
+              className="text-purple-600 underline"
+              href="https://github.com/maxmcd/do-s3/blob/main/worker/s3.ts"
+            >
+              an S3 api
+            </a>
+            .
+          </p>
+          <p className="text-gray-700 leading-relaxed mt-2">
+            Run{" "}
+            <code className="bg-purple-100 px-2 py-0.5 rounded text-sm">
+              rm -rf node_modules && bun install
+            </code>{" "}
+            to generate lots of request logs.
           </p>
         </div>
 

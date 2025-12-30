@@ -1,59 +1,52 @@
-# Containers Starter
+# DO-S3
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/templates/tree/main/containers-template)
+A Cloudflare Container that uses a Durable Object for persistent storage. The `/data` directory is a FUSE mount that connects to a Durable Object over an [S3 API](https://github.com/maxmcd/do-s3/blob/main/worker/s3.ts).
 
-![Containers Template Preview](https://imagedelivery.net/_yJ02hpOMj_EnGvsU2aygw/5aba1fb7-b937-46fd-fa67-138221082200/public)
+## Architecture
 
-<!-- dash-content-start -->
+```mermaid
+graph TB
+    User[Browser/User]
 
-This is a [Container](https://developers.cloudflare.com/containers/) starter template.
+    subgraph "Cloudflare Worker"
+        Worker[Worker Router]
+        RR[React Router<br/>Web UI]
+    end
 
-It demonstrates basic Container configuration, launching and routing to individual container, load balancing over multiple container, running basic hooks on container status changes.
+    subgraph "Terminal Container DO"
+        Container[Go HTTP Server<br/>PTY/Shell]
+        FUSE[tigrisfs FUSE Mount<br/>/data]
+    end
 
-<!-- dash-content-end -->
+    subgraph "S3 Durable Object"
+        S3[S3 API Handler<br/>JWT Auth]
+        SQLite[(SQLite Storage<br/>Chunked Objects)]
+        WS[WebSocket<br/>Activity Stream]
+    end
 
-Outside of this repo, you can start a new project with this template using [C3](https://developers.cloudflare.com/pages/get-started/c3/) (the `create-cloudflare` CLI):
+    User <-->|HTTP/WS| Worker
+    Worker <-->|"/ (web pages)"| RR
+    Worker <-->|"/ws (terminal)"| Container
+    Worker <-->|"/s3-logs-ws (S3 request logs)"| WS
 
-```bash
-npm create cloudflare@latest -- --template=cloudflare/templates/containers-template
+    Container <-->|WebSocket<br/>PTY I/O| User
+    Container <-.->|reads/writes<br/>files| FUSE
+    FUSE <-->|"/s3-* (S3 API)"| S3
+
+    S3 <-->|store/retrieve| SQLite
+
+    style Container fill:#e1f5ff
+    style S3 fill:#fff4e1
+    style SQLite fill:#f0f0f0
 ```
 
-## Getting Started
+## How It Works
 
-First, run:
-
-```bash
-npm install
-# or
-yarn install
-# or
-pnpm install
-# or
-bun install
-```
-
-Then run the development server (using the package manager of your choice):
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:8787](http://localhost:8787) with your browser to see the result.
-
-You can start editing your Worker by modifying `src/index.ts` and you can start
-editing your Container by editing the content of `container_src`.
-
-## Deploying To Production
-
-| Command          | Action                                |
-| :--------------- | :------------------------------------ |
-| `npm run deploy` | Deploy your application to Cloudflare |
-
-## Learn More
-
-To learn more about Containers, take a look at the following resources:
-
-- [Container Documentation](https://developers.cloudflare.com/containers/) - learn about Containers
-- [Container Class](https://github.com/cloudflare/containers) - learn about the Container helper class
-
-Your feedback and contributions are welcome!
+1. **Web UI**: React Router frontend served by Cloudflare Worker
+2. **Terminal Container**: Go server running in a Cloudflare Container with:
+   - WebSocket-based PTY for terminal access
+   - FUSE filesystem mounted at `/data` using tigrisfs
+3. **S3 Durable Object**: Custom S3-compatible API that:
+   - Stores objects in SQLite (chunked for large files)
+   - Uses JWT for authentication/authorization
+   - Broadcasts request activity via WebSocket

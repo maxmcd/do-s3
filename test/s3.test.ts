@@ -13,10 +13,9 @@ import {
   ListMultipartUploadsCommand,
   CopyObjectCommand,
 } from "@aws-sdk/client-s3";
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { DOMParser } from "@xmldom/xmldom";
-import { signToken } from "../lib/jwt";
-import type { Computer } from "../computers";
+import { signToken } from "../worker/lib/jwt";
 
 // Polyfill DOMParser and Node constants for AWS SDK XML parsing
 globalThis.DOMParser = DOMParser as any;
@@ -28,16 +27,15 @@ globalThis.Node = {
   DOCUMENT_NODE: 9,
 } as any;
 
-// Store test computer credentials
-let testComputer: Computer;
-let testSecret: string;
-
 async function createS3ClientForBucket(doName: string): Promise<S3Client> {
+  // Use the same secret as configured in wrangler.jsonc
+  const secret = env.S3_JWT_SECRET || "demo-secret-change-in-production";
+
   // Token for accessing this S3 DO instance
   // The bucket name in the token should match what's in the S3 path
   const token = await signToken(
-    { sub: testComputer.slug, bucket: doName, expiresIn: 3600 },
-    testSecret
+    { sub: "test-terminal", bucket: doName, expiresIn: 3600 },
+    secret
   );
 
   const id = env.S3.idFromName(doName);
@@ -86,20 +84,6 @@ async function createS3ClientForBucket(doName: string): Promise<S3Client> {
 }
 
 describe("S3 with AWS SDK", () => {
-  beforeAll(async () => {
-    // Create a test computer with secrets
-    const computersStub = env.COMPUTERS.get(env.COMPUTERS.idFromName("global"));
-    const result = await computersStub.createComputer("Test Computer");
-
-    if (!result.success || !result.computer) {
-      throw new Error(`Failed to create test computer: ${result.error}`);
-    }
-
-    testComputer = result.computer;
-    const secrets = JSON.parse(testComputer.secrets);
-    testSecret = secrets[0];
-  });
-
   it("can PUT and GET an object using AWS S3 SDK", async () => {
     const doName = "test-instance";
     const s3Client = await createS3ClientForBucket(doName);
